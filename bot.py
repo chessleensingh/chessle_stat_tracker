@@ -1,0 +1,150 @@
+import os
+import sqlite3
+
+import discord
+from discord import app_commands
+from dotenv import load_dotenv
+
+import database as db
+from parser import parse_chessle_result
+
+load_dotenv()
+
+TOKEN = os.getenv("DISCORD_TOKEN")
+CHESSLE_CHANNEL_ID = os.getenv("CHESSLE_CHANNEL_ID")
+
+# MESSAGE_CONTENT is a privileged intent — must be enabled in the Discord
+# Developer Portal under Bot > Privileged Gateway Intents.
+# Without it the bot cannot read message text and won't detect Chessle pastes.
+intents = discord.Intents.default()
+intents.message_content = True
+
+client = discord.Client(intents=intents)
+tree = app_commands.CommandTree(client)
+
+
+@client.event
+async def on_ready():
+    db.init_db()
+    await tree.sync()
+    print(f"Logged in as {client.user} (ID: {client.user.id})")
+
+
+@client.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    if CHESSLE_CHANNEL_ID and str(message.channel.id) != CHESSLE_CHANNEL_ID:
+        return
+
+    result = parse_chessle_result(message.content)
+    if not result:
+        return
+
+    is_new = db.save_result(
+        user_id=str(message.author.id),
+        username=message.author.display_name,
+        puzzle_num=result["puzzle_num"],
+        difficulty=result["difficulty"],
+        score=result["score"],
+    )
+    if is_new:
+        score_str = str(result["score"]) if result["score"] else "X"
+        await message.add_reaction("✅")
+        await message.reply(
+            f"Logged **Chessle #{result['puzzle_num']}** — **{score_str}/6** for {message.author.mention}",
+            mention_author=False,
+        )
+    else:
+        await message.add_reaction("⚠️")
+        await message.reply(
+            f"Already logged Chessle #{result['puzzle_num']} for you.",
+            mention_author=False,
+        )
+
+
+@tree.command(name="stats", description="Show your Chessle stats (or another member's)")
+@app_commands.describe(member="The member to look up (defaults to you)")
+async def stats(interaction: discord.Interaction, member: discord.Member = None):
+    target = member or interaction.user
+    data = db.get_user_stats(str(target.id))
+
+    if not data:
+        await interaction.response.send_message(
+            f"No Chessle results recorded for {target.display_name}.", ephemeral=True
+        )
+        return
+
+    dist = data["distribution"]
+    dist_bar = "\n".join(
+        f"`{i}/6` {'🟩' * dist[i]:<6} {dist[i]}"
+        for i in range(1, 7)
+        if dist[i] > 0
+    )
+
+    embed = discord.Embed(title=f"Chessle Stats — {data['username']}", color=0x5865F2)
+    embed.add_field(name="Played", value=str(data["total"]), inline=True)
+    embed.add_field(name="Win %", value=f"{data['win_pct']:.0f}%", inline=True)
+    embed.add_field(name="Avg Score", value=f"{data['avg_score']:.2f}/6" if data["wins"] else "—", inline=True)
+    embed.add_field(name="Current Streak", value=f"🔥 {data['streak']}", inline=True)
+    embed.add_field(name="Best Streak", value=f"⭐ {data['best_streak']}", inline=True)
+    embed.add_field(name="\u200b", value="\u200b", inline=True)
+    if dist_bar:
+        embed.add_field(name="Score Distribution", value=dist_bar, inline=False)
+
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="leaderboard", description="Show the all-time Chessle leaderboard")
+async def leaderboard(interaction: discord.Interaction):
+    rows = db.get_leaderboard(10)
+    if not rows:
+        await interaction.response.send_message("No results yet!", ephemeral=True)
+        return
+
+    lines = []
+    medals = ["🥇", "🥈", "🥉"]
+    for i, row in enumerate(rows):
+        prefix = medals[i] if i < 3 else f"`{i+1}.`"
+        avg = f"{row['avg_score']:.2f}" if row["avg_score"] else "—"
+        lines.append(f"{prefix} **{row['username']}** — {row['wins']}/{row['total']} wins, avg {avg}/6")
+
+    embed = discord.Embed(title="Chessle Leaderboard", description="\n".join(lines), color=0xF1C40F)
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="today", description="Show everyone's results for a puzzle number")
+@app_commands.describe(puzzle_num="Puzzle number (defaults to most recent)")
+async def today(interaction: discord.Interaction, puzzle_num: int = None):
+    if puzzle_num is None:
+        with sqlite3.connect("chessle_stats.db") as conn:
+            row = conn.execute("SELECT MAX(puzzle_num) FROM results").fetchone()
+            puzzle_num = row[0] if row and row[0] else None
+
+    if puzzle_num is None:
+        await interaction.response.send_message("No results logged yet.", ephemeral=True)
+        return
+
+    rows = db.get_today_results(puzzle_num)
+    if not rows:
+        await interaction.response.send_message(
+            f"No results logged for Chessle #{puzzle_num}.", ephemeral=True
+        )
+        return
+
+    lines = [
+        f"**{row['username']}** — {row['score']}/6" if row["score"] else f"**{row['username']}** — X/6"
+        for row in rows
+    ]
+
+    embed = discord.Embed(
+        title=f"Chessle #{puzzle_num} Results",
+        description="\n".join(lines),
+        color=0x2ECC71,
+    )
+    embed.set_footer(text=f"{len(rows)} player(s) logged")
+    await interaction.response.send_message(embed=embed)
+
+
+client.run(TOKEN)
