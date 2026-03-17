@@ -147,6 +147,42 @@ async def today(interaction: discord.Interaction, puzzle_num: int = None):
     await interaction.response.send_message(embed=embed)
 
 
+@tree.command(name="results", description="Show all logged Chessle results")
+async def results(interaction: discord.Interaction):
+    with sqlite3.connect("chessle_stats.db") as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT puzzle_num, username, score, difficulty, posted_at FROM results ORDER BY puzzle_num DESC, score ASC NULLS LAST"
+        ).fetchall()
+
+    if not rows:
+        await interaction.response.send_message("No results logged yet.", ephemeral=True)
+        return
+
+    # Try to fit in an embed table
+    lines = ["```", f"{'#':<6} {'Player':<20} {'Score':<7} {'Difficulty'}", "-" * 46]
+    for row in rows:
+        score_str = f"{row['score']}/6" if row["score"] else "X/6"
+        lines.append(f"{row['puzzle_num']:<6} {row['username'][:20]:<20} {score_str:<7} {row['difficulty']}")
+    lines.append("```")
+
+    content = "\n".join(lines)
+    if len(content) <= 2000:
+        await interaction.response.send_message(content)
+    else:
+        # Too long — send as CSV file
+        import io
+        csv_lines = ["puzzle_num,username,score,difficulty,posted_at"]
+        for row in rows:
+            score_str = str(row["score"]) if row["score"] else "X"
+            csv_lines.append(f"{row['puzzle_num']},{row['username']},{score_str},{row['difficulty']},{row['posted_at']}")
+        csv_bytes = "\n".join(csv_lines).encode("utf-8")
+        await interaction.response.send_message(
+            f"Too many results to display — here's the full list ({len(rows)} entries):",
+            file=discord.File(io.BytesIO(csv_bytes), filename="chessle_results.csv"),
+        )
+
+
 @tree.command(name="backfill", description="Scan a channel's history and log all Chessle results (admin only)")
 @app_commands.describe(channel="Channel to scan (defaults to current channel)")
 @app_commands.default_permissions(manage_guild=True)
