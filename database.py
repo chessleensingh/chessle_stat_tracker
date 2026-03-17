@@ -1,7 +1,8 @@
+import os
 import sqlite3
 from contextlib import contextmanager
 
-DB_PATH = "chessle_stats.db"
+DB_PATH = os.environ.get("DB_PATH", "chessle_stats.db")
 
 
 @contextmanager

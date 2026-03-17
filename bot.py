@@ -118,7 +118,7 @@ async def leaderboard(interaction: discord.Interaction):
 @app_commands.describe(puzzle_num="Puzzle number (defaults to most recent)")
 async def today(interaction: discord.Interaction, puzzle_num: int = None):
     if puzzle_num is None:
-        with sqlite3.connect("chessle_stats.db") as conn:
+        with sqlite3.connect(db.DB_PATH) as conn:
             row = conn.execute("SELECT MAX(puzzle_num) FROM results").fetchone()
             puzzle_num = row[0] if row and row[0] else None
 
@@ -149,7 +149,7 @@ async def today(interaction: discord.Interaction, puzzle_num: int = None):
 
 @tree.command(name="results", description="Show all logged Chessle results")
 async def results(interaction: discord.Interaction):
-    with sqlite3.connect("chessle_stats.db") as conn:
+    with sqlite3.connect(db.DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT puzzle_num, username, score, difficulty, posted_at FROM results ORDER BY puzzle_num DESC, score ASC NULLS LAST"
