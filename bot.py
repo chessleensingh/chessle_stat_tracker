@@ -147,4 +147,39 @@ async def today(interaction: discord.Interaction, puzzle_num: int = None):
     await interaction.response.send_message(embed=embed)
 
 
+@tree.command(name="backfill", description="Scan a channel's history and log all Chessle results (admin only)")
+@app_commands.describe(channel="Channel to scan (defaults to current channel)")
+@app_commands.default_permissions(manage_guild=True)
+async def backfill(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    target_channel = channel or interaction.channel
+    await interaction.response.send_message(
+        f"Scanning {target_channel.mention} history... this may take a moment.", ephemeral=True
+    )
+
+    added = 0
+    skipped = 0
+    async for message in target_channel.history(limit=None, oldest_first=True):
+        if message.author.bot:
+            continue
+        result = parse_chessle_result(message.content)
+        if not result:
+            continue
+        is_new = db.save_result(
+            user_id=str(message.author.id),
+            username=message.author.display_name,
+            puzzle_num=result["puzzle_num"],
+            difficulty=result["difficulty"],
+            score=result["score"],
+        )
+        if is_new:
+            added += 1
+        else:
+            skipped += 1
+
+    await interaction.followup.send(
+        f"Done! Found **{added + skipped}** Chessle results — added **{added}** new, skipped **{skipped}** duplicates.",
+        ephemeral=True,
+    )
+
+
 client.run(TOKEN)
