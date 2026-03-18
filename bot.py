@@ -49,19 +49,7 @@ async def on_message(message: discord.Message):
         difficulty=result["difficulty"],
         score=result["score"],
     )
-    if is_new:
-        score_str = str(result["score"]) if result["score"] else "X"
-        await message.add_reaction("✅")
-        await message.reply(
-            f"Logged **Chessle #{result['puzzle_num']}** — **{score_str}/6** for {message.author.mention}",
-            mention_author=False,
-        )
-    else:
-        await message.add_reaction("⚠️")
-        await message.reply(
-            f"Already logged Chessle #{result['puzzle_num']} for you.",
-            mention_author=False,
-        )
+    pass
 
 
 @tree.command(name="stats", description="Show your Chessle stats (or another member's)")
