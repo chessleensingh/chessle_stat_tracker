@@ -49,7 +49,10 @@ async def on_message(message: discord.Message):
         difficulty=result["difficulty"],
         score=result["score"],
     )
-    pass
+    if is_new:
+        await message.add_reaction("✅")
+    else:
+        await message.add_reaction("⚠️")
 
 
 @tree.command(name="stats", description="Show your Chessle stats (or another member's)")
