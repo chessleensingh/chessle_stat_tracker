@@ -1,5 +1,7 @@
 import os
 import sqlite3
+import asyncio
+import random
 
 import discord
 from discord import app_commands
@@ -23,10 +25,44 @@ client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 
+ACTIVITIES = [
+    "Mouse slipping every move",
+    "Blundering a won position",
+    "Premove gone wrong",
+    "Losing on time with 3 queens",
+    "En passant is forced",
+    "Hanging the queen again",
+    "Flagging a king and pawn endgame",
+    "Resigning before checkmate",
+    "Playing e4 and forgetting theory",
+    "Misclicking into a fork",
+    "Sacking the bishop for vibes",
+    "Offering a draw in a winning position",
+    "Accidentally castling into it",
+    "Running out of time in a 30 min game",
+    "Assuming the opponent blunders",
+]
+
+
+async def cycle_activities():
+    await client.wait_until_ready()
+    order = ACTIVITIES[:]
+    random.shuffle(order)
+    i = 0
+    while not client.is_closed():
+        activity = discord.Game(name=order[i % len(order)])
+        await client.change_presence(activity=activity)
+        i += 1
+        if i % len(order) == 0:
+            random.shuffle(order)
+        await asyncio.sleep(120)  # rotate every 2 minutes
+
+
 @client.event
 async def on_ready():
     db.init_db()
     await tree.sync()
+    client.loop.create_task(cycle_activities())
     print(f"Logged in as {client.user} (ID: {client.user.id})")
 
 
